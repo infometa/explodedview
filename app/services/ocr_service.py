@@ -115,7 +115,13 @@ class OCRService:
         if image is None:
             raise ValueError(f"无法读取图片: {image_path}")
 
-        raw_result = self.ocr.ocr(image, cls=self.use_angle_cls)
+        try:
+            raw_result = self.ocr.ocr(image, cls=self.use_angle_cls)
+        except TypeError as exc:
+            if "unexpected keyword argument 'cls'" in str(exc):
+                raw_result = self.ocr.ocr(image)
+            else:
+                raise
 
         boxes: List[OCRBox] = []
         if isinstance(raw_result, list):
