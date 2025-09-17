@@ -113,7 +113,13 @@ class OCRService:
             logger.warning("Failed to switch Paddle to GPU: %s", exc)
 
     def run(self, image_path: str) -> List[OCRBox]:
-        result = self.ocr.ocr(image_path, cls=True)
+        ocr_callable = getattr(self.ocr, "ocr")
+        signature_params = set(inspect.signature(ocr_callable).parameters.keys())
+        extra_kwargs = {}
+        if "cls" in signature_params:
+            extra_kwargs["cls"] = True
+
+        result = ocr_callable(image_path, **extra_kwargs)
         boxes: List[OCRBox] = []
         for line in result:
             for bbox, (text, score) in line:
