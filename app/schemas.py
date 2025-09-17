@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DetectionBase(BaseModel):
@@ -12,7 +12,8 @@ class DetectionBase(BaseModel):
     bbox_x2: float
     bbox_y2: float
 
-    @validator("text")
+    @field_validator("text")
+    @classmethod
     def normalize_text(cls, value: str) -> str:
         return value.strip()
 
@@ -31,7 +32,8 @@ class DetectionUpdate(BaseModel):
     bbox_y2: Optional[float]
     source: Optional[str]
 
-    @validator("text")
+    @field_validator("text")
+    @classmethod
     def normalize_text(cls, value: Optional[str]) -> Optional[str]:
         return value.strip() if value else value
 
@@ -44,8 +46,7 @@ class DetectionRead(DetectionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FileBase(BaseModel):
@@ -66,8 +67,7 @@ class FileRead(FileBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FileDetail(FileRead):
