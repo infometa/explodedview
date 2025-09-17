@@ -130,6 +130,11 @@ class OCRService:
                 box.confidence,
                 box.bbox,
             )
+        if not boxes:
+            preview = repr(result)
+            if isinstance(preview, str) and len(preview) > 1000:
+                preview = preview[:1000] + "..."
+            logger.warning("OCR 原始返回为空或无法解析: %s", preview)
         return boxes
 
     def _parse_result(self, result: object) -> List[OCRBox]:
