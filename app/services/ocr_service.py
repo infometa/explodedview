@@ -1,10 +1,8 @@
-import inspect
 import logging
-import re
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import List, Optional
 
-import numpy as np
+import cv2
 
 from paddleocr import PaddleOCR
 
@@ -15,7 +13,6 @@ except ImportError:  # pragma: no cover - paddle is an optional runtime dep
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_CHAR_PATTERN = re.compile(r"^[0-9A-E-]+$")
 ALLOWED_CHAR_SET = set("0123456789ABCDE-")
 
 
@@ -114,14 +111,24 @@ class OCRService:
             logger.warning("Failed to switch Paddle to GPU: %s", exc)
 
     def run(self, image_path: str) -> List[OCRBox]:
-        ocr_callable = getattr(self.ocr, "ocr")
-        signature_params = set(inspect.signature(ocr_callable).parameters.keys())
-        extra_kwargs = {}
-        if "cls" in signature_params and self.use_angle_cls:
-            extra_kwargs["cls"] = True
+        image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError(f"无法读取图片: {image_path}")
 
-        result = ocr_callable(image_path, **extra_kwargs)
-        boxes = self._parse_result(result)
+        try:
+            dt_boxes, rec_res, _ = self.ocr.__call__(image, cls=self.use_angle_cls)
+        except TypeError:
+            dt_boxes, rec_res, _ = self.ocr.__call__(image)
+
+        boxes: List[OCRBox] = []
+        if dt_boxes and rec_res:
+            for poly, rec in zip(dt_boxes, rec_res):
+                if isinstance(rec, (list, tuple)) and len(rec) >= 2:
+                    text, score = rec[0], rec[1]
+                else:
+                    text, score = rec, 1.0
+                self._append_box(boxes, poly, text, score)
+
         logger.info("PaddleOCR 返回 %s 个候选框", len(boxes))
         for idx, box in enumerate(boxes, start=1):
             logger.info(
@@ -132,148 +139,8 @@ class OCRService:
                 box.bbox,
             )
         if not boxes:
-            preview = repr(result)
-            if isinstance(preview, str) and len(preview) > 1000:
-                preview = preview[:1000] + "..."
-            logger.warning("OCR 原始返回为空或无法解析: %s", preview)
+            logger.warning("OCR 未返回有效检测框")
         return boxes
-
-    def _parse_result(self, result: object) -> List[OCRBox]:
-        boxes: List[OCRBox] = []
-
-        if not result:
-            return boxes
-
-        visited = set()
-
-        def visit(node: Any) -> None:
-            node_id = id(node)
-            if node_id in visited:
-                return
-            visited.add(node_id)
-
-            if node is None:
-                return
-
-            if isinstance(node, dict):
-                if "dt_polys" in node and "rec_texts" in node:
-                    self._append_dt_polys(node, boxes)
-                    return
-                for key, value in node.items():
-                    if key in {"input_img", "rot_img", "output_img", "rot_mat"}:
-                        continue
-                    visit(value)
-                return
-
-            if isinstance(node, (list, tuple)):
-                if len(node) == 2 and self._looks_like_bbox(node[0]):
-                    bbox_candidate = node[0]
-                    rec = node[1]
-                    if isinstance(rec, (list, tuple)) and len(rec) >= 2:
-                        text, score = rec[0], rec[1]
-                    else:
-                        text, score = rec, 1.0
-                    self._append_box(boxes, bbox_candidate, text, score)
-                    return
-
-                for item in node:
-                    visit(item)
-                return
-
-            if isinstance(node, np.ndarray):
-                return
-
-        visit(result)
-        return boxes
-
-    def _looks_like_bbox(self, value: object) -> bool:
-        if value is None:
-            return False
-        if hasattr(value, "tolist"):
-            value = value.tolist()
-        if isinstance(value, dict):
-            return any(key in value for key in ("points", "bbox", "box", "dt_box"))
-        if isinstance(value, (list, tuple)):
-            if len(value) == 4 and all(isinstance(v, (int, float)) for v in value):
-                return True
-            if value and all(isinstance(p, (list, tuple)) and len(p) >= 2 for p in value):
-                return True
-        return False
-
-    def _reverse_orientation(
-        self, poly: object, angle: float, width: int, height: int
-    ) -> List[List[float]]:
-        """将文档预处理旋转后的多边形坐标还原到原始坐标系."""
-
-        if hasattr(poly, "tolist"):
-            poly = poly.tolist()
-
-        arr = np.asarray(poly, dtype=float)
-        if arr.ndim == 1:
-            if arr.size == 4:
-                arr = arr.reshape(2, 2)
-            elif arr.size == 8:
-                arr = arr.reshape(4, 2)
-            else:
-                raise ValueError(f"无法处理的多边形形状: {poly}")
-
-        if arr.ndim != 2 or arr.shape[1] < 2:
-            raise ValueError(f"无法处理的多边形形状: {poly}")
-
-        if angle % 360 == 0:
-            return arr.tolist()
-
-        angle_norm = int(angle) % 360
-
-        if angle_norm == 180:
-            transformed = np.empty_like(arr)
-            transformed[:, 0] = width - 1 - arr[:, 0]
-            transformed[:, 1] = height - 1 - arr[:, 1]
-        elif angle_norm == 90:
-            transformed = np.empty_like(arr)
-            transformed[:, 0] = arr[:, 1]
-            transformed[:, 1] = width - 1 - arr[:, 0]
-        elif angle_norm == 270:
-            transformed = np.empty_like(arr)
-            transformed[:, 0] = height - 1 - arr[:, 1]
-            transformed[:, 1] = arr[:, 0]
-        else:
-            logger.debug("未处理的旋转角度 %s，返回原坐标", angle)
-            return arr.tolist()
-
-        return transformed.tolist()
-
-    def _append_dt_polys(self, entry: dict, boxes: List[OCRBox]) -> None:
-        polys = entry.get("dt_polys") or entry.get("det_polys")
-        texts = entry.get("rec_texts") or entry.get("texts")
-        scores = entry.get("rec_scores") or entry.get("scores") or []
-
-        if not polys or not texts:
-            return
-
-        angle = None
-        image_width = None
-        image_height = None
-        doc_res = entry.get("doc_preprocessor_res") or {}
-        if isinstance(doc_res, dict):
-            angle = doc_res.get("angle")
-            img_ref = doc_res.get("input_img")
-            if img_ref is None:
-                img_ref = doc_res.get("output_img")
-            if isinstance(img_ref, np.ndarray):
-                image_height, image_width = img_ref.shape[:2]
-
-        for idx, poly in enumerate(polys):
-            text = texts[idx] if idx < len(texts) else ""
-            score = scores[idx] if idx < len(scores) else 1.0
-            if (
-                angle is not None
-                and image_width is not None
-                and image_height is not None
-                and angle % 360 != 0
-            ):
-                poly = self._reverse_orientation(poly, angle, image_width, image_height)
-            self._append_box(boxes, poly, text, score)
 
     def _append_box(self, boxes: List[OCRBox], bbox: object, text: object, score: object) -> None:
         cleaned_text = self._clean_text(str(text)) if text is not None else None
