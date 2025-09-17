@@ -115,19 +115,25 @@ class OCRService:
         if image is None:
             raise ValueError(f"无法读取图片: {image_path}")
 
-        try:
-            dt_boxes, rec_res, _ = self.ocr.__call__(image, cls=self.use_angle_cls)
-        except TypeError:
-            dt_boxes, rec_res, _ = self.ocr.__call__(image)
+        raw_result = self.ocr.ocr(image, cls=self.use_angle_cls)
 
         boxes: List[OCRBox] = []
-        if dt_boxes and rec_res:
-            for poly, rec in zip(dt_boxes, rec_res):
-                if isinstance(rec, (list, tuple)) and len(rec) >= 2:
-                    text, score = rec[0], rec[1]
-                else:
-                    text, score = rec, 1.0
-                self._append_box(boxes, poly, text, score)
+        if isinstance(raw_result, list):
+            for page in raw_result:
+                if not page:
+                    continue
+                for entry in page:
+                    if not entry or not isinstance(entry, (list, tuple)):
+                        continue
+                    if len(entry) < 2:
+                        continue
+                    poly = entry[0]
+                    rec = entry[1]
+                    if isinstance(rec, (list, tuple)) and len(rec) >= 2:
+                        text, score = rec[0], rec[1]
+                    else:
+                        text, score = rec, 1.0
+                    self._append_box(boxes, poly, text, score)
 
         logger.info("PaddleOCR 返回 %s 个候选框", len(boxes))
         for idx, box in enumerate(boxes, start=1):
