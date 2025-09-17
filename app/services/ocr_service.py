@@ -28,22 +28,34 @@ class OCRService:
         custom_dict = str(OCR_CHAR_DICT) if OCR_CHAR_DICT.exists() else None
         init_kwargs = {
             "lang": lang,
-            "use_gpu": use_gpu,
             "use_angle_cls": True,
             "det_model_dir": det_model_dir,
             "rec_model_dir": rec_model_dir,
             "rec_char_dict_path": custom_dict,
         }
+        # Keep use_gpu only if the installed PaddleOCR supports it.
+        if use_gpu is not None:
+            init_kwargs["use_gpu"] = use_gpu
 
-        # Some PaddleOCR versions do not accept rec_algorithm; we guard it conditionally.
+        def _create_ocr(**extra):
+            kwargs = {**init_kwargs, **extra}
+            try:
+                return PaddleOCR(**kwargs)
+            except (TypeError, ValueError) as exc:
+                message = str(exc)
+                if "Unknown argument" in message:
+                    unknown = message.split(":", 1)[-1].strip()
+                    unknown = unknown.strip(" '\"")
+                    init_kwargs.pop(unknown, None)
+                    kwargs.pop(unknown, None)
+                    return PaddleOCR(**kwargs)
+                raise
+
         try:
-            self.ocr = PaddleOCR(
-                rec_algorithm="SVTR_LCNet",
-                **init_kwargs,
-            )
-        except TypeError:
-            # Fallback to default algorithm if the argument is unsupported.
-            self.ocr = PaddleOCR(**init_kwargs)
+            self.ocr = _create_ocr(rec_algorithm="SVTR_LCNet")
+        except (TypeError, ValueError):
+            # rec_algorithm argument not supported; fallback to defaults.
+            self.ocr = _create_ocr()
 
     def run(self, image_path: str) -> List[OCRBox]:
         result = self.ocr.ocr(image_path, cls=True)
