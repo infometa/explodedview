@@ -1,11 +1,19 @@
+import inspect
+import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import List, Optional
 
 from paddleocr import PaddleOCR
 
 from ..config import OCR_CHAR_DICT
+
+try:
+    import paddle  # type: ignore
+except ImportError:  # pragma: no cover - paddle is an optional runtime dep
+    paddle = None
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_CHAR_PATTERN = re.compile(r"^[0-9A-E-]+$")
 
@@ -23,39 +31,86 @@ class OCRService:
         lang: str = "en",
         det_model_dir: Optional[str] = None,
         rec_model_dir: Optional[str] = None,
-        use_gpu: bool = False,
+        use_gpu: Optional[bool] = None,
     ) -> None:
         custom_dict = str(OCR_CHAR_DICT) if OCR_CHAR_DICT.exists() else None
         init_kwargs = {
             "lang": lang,
             "use_angle_cls": True,
-            "det_model_dir": det_model_dir,
-            "rec_model_dir": rec_model_dir,
-            "rec_char_dict_path": custom_dict,
         }
-        # Keep use_gpu only if the installed PaddleOCR supports it.
-        if use_gpu is not None:
-            init_kwargs["use_gpu"] = use_gpu
+        if det_model_dir:
+            init_kwargs["det_model_dir"] = det_model_dir
+        if rec_model_dir:
+            init_kwargs["rec_model_dir"] = rec_model_dir
+        if custom_dict:
+            init_kwargs["rec_char_dict_path"] = custom_dict
 
-        def _create_ocr(**extra):
-            kwargs = {**init_kwargs, **extra}
-            try:
-                return PaddleOCR(**kwargs)
-            except (TypeError, ValueError) as exc:
-                message = str(exc)
-                if "Unknown argument" in message:
-                    unknown = message.split(":", 1)[-1].strip()
-                    unknown = unknown.strip(" '\"")
-                    init_kwargs.pop(unknown, None)
-                    kwargs.pop(unknown, None)
+        gpu_enabled = self._resolve_gpu_flag(use_gpu)
+        if gpu_enabled:
+            self._configure_gpu_device()
+
+        def _create_ocr(**extra_kwargs):
+            kwargs = {**init_kwargs, **extra_kwargs}
+            while True:
+                try:
                     return PaddleOCR(**kwargs)
-                raise
+                except (TypeError, ValueError) as exc:
+                    message = str(exc)
+                    if "Unknown argument" in message:
+                        unknown = message.split(":", 1)[-1].strip().strip(" '\"")
+                        if unknown in kwargs:
+                            kwargs.pop(unknown)
+                            continue
+                    raise
+
+        extra = {}
+        if gpu_enabled:
+            extra["use_gpu"] = True
 
         try:
-            self.ocr = _create_ocr(rec_algorithm="SVTR_LCNet")
+            self.ocr = _create_ocr(rec_algorithm="SVTR_LCNet", **extra)
         except (TypeError, ValueError):
-            # rec_algorithm argument not supported; fallback to defaults.
-            self.ocr = _create_ocr()
+            self.ocr = _create_ocr(**extra)
+
+    def _resolve_gpu_flag(self, explicit_flag: Optional[bool]) -> bool:
+        if explicit_flag is False:
+            return False
+        available = self._gpu_available()
+        if explicit_flag is True and not available:
+            logger.warning("GPU requested but not available; falling back to CPU mode")
+            return False
+        if explicit_flag is None:
+            return available
+        return explicit_flag and available
+
+    def _gpu_available(self) -> bool:
+        if paddle is None:
+            return False
+        try:
+            compiled = paddle.device.is_compiled_with_cuda()
+        except AttributeError:  # pragma: no cover
+            compiled = getattr(paddle, "is_compiled_with_cuda", lambda: False)()
+        if not compiled:
+            return False
+        try:
+            cuda_ns = getattr(paddle.device, "cuda", None)
+            if cuda_ns and hasattr(cuda_ns, "device_count"):
+                return cuda_ns.device_count() > 0
+        except Exception:  # pragma: no cover - defensive
+            pass
+        return True
+
+    def _configure_gpu_device(self) -> None:
+        if paddle is None:
+            logger.warning("Paddle is not installed; cannot enable GPU mode")
+            return
+        try:
+            if hasattr(paddle.device, "set_device"):
+                paddle.device.set_device("gpu")
+            else:  # pragma: no cover - legacy fallback
+                paddle.set_device("gpu")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to switch Paddle to GPU: %s", exc)
 
     def run(self, image_path: str) -> List[OCRBox]:
         result = self.ocr.ocr(image_path, cls=True)
