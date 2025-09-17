@@ -1,4 +1,6 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import logging
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +14,9 @@ from .services.upscale import UpscaleEngine
 from .websocket_manager import WebSocketManager
 
 Base.metadata.create_all(bind=engine)
+
+
+logger = logging.getLogger("uvicorn.access")
 
 
 def create_app() -> FastAPI:
@@ -40,6 +45,16 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def root() -> RedirectResponse:
         return RedirectResponse(url="/static/index.html")
+
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        client_host = request.client.host if request.client else "unknown"
+        logger.info("Incoming %s %s from %s", request.method, request.url.path, client_host)
+        response = await call_next(request)
+        logger.info(
+            "Completed %s %s with status %s", request.method, request.url.path, response.status_code
+        )
+        return response
 
     @app.websocket("/ws/updates")
     async def websocket_updates(websocket: WebSocket) -> None:
