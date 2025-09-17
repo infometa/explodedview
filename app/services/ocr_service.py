@@ -120,15 +120,72 @@ class OCRService:
             extra_kwargs["cls"] = True
 
         result = ocr_callable(image_path, **extra_kwargs)
+        return self._parse_result(result)
+
+    def _parse_result(self, result: object) -> List[OCRBox]:
         boxes: List[OCRBox] = []
-        for line in result:
-            for bbox, (text, score) in line:
-                cleaned_text = self._clean_text(text)
-                if not cleaned_text:
+
+        if not result:
+            return boxes
+
+        if isinstance(result, tuple) and len(result) == 2:
+            dt_boxes, rec_res = result
+            if isinstance(dt_boxes, (list, tuple)) and isinstance(rec_res, (list, tuple)):
+                for bbox, rec in zip(dt_boxes, rec_res):
+                    text, score = rec if isinstance(rec, (list, tuple)) and len(rec) >= 2 else (rec, 1.0)
+                    self._append_box(boxes, bbox, text, score)
+                return boxes
+
+        if isinstance(result, list) and result and isinstance(result[0], dict):
+            for item in result:
+                if not isinstance(item, dict):
                     continue
-                flat_box = self._to_bbox(bbox)
-                boxes.append(OCRBox(text=cleaned_text, confidence=float(score), bbox=flat_box))
+                bbox = item.get("bbox") or item.get("box") or item.get("points") or item.get("dt_box")
+                text = item.get("text") or item.get("transcription") or item.get("rec_text")
+                score = item.get("confidence") or item.get("score") or item.get("rec_score")
+                if bbox is None or text is None:
+                    continue
+                self._append_box(boxes, bbox, text, score if score is not None else 1.0)
+            return boxes
+
+        if isinstance(result, list):
+            for line in result:
+                if isinstance(line, dict):
+                    bbox = line.get("bbox") or line.get("box") or line.get("points") or line.get("dt_box")
+                    text = line.get("text") or line.get("transcription") or line.get("rec_text")
+                    score = line.get("confidence") or line.get("score") or line.get("rec_score")
+                    if bbox is None or text is None:
+                        continue
+                    self._append_box(boxes, bbox, text, score if score is not None else 1.0)
+                    continue
+                if isinstance(line, (list, tuple)):
+                    for entry in line if isinstance(line[0], (list, tuple)) else [line]:
+                        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                            bbox, rec = entry[0], entry[1]
+                            if isinstance(rec, (list, tuple)) and len(rec) >= 2:
+                                text, score = rec[0], rec[1]
+                            else:
+                                text, score = rec, 1.0
+                            self._append_box(boxes, bbox, text, score)
+            return boxes
+
         return boxes
+
+    def _append_box(self, boxes: List[OCRBox], bbox: object, text: object, score: object) -> None:
+        cleaned_text = self._clean_text(str(text)) if text is not None else None
+        if not cleaned_text:
+            return
+        try:
+            confidence = float(score) if score is not None else 1.0
+        except (TypeError, ValueError):
+            confidence = 1.0
+
+        try:
+            flat_box = self._to_bbox(bbox)
+        except ValueError:
+            logger.warning("跳过不支持的bbox格式: %s", bbox)
+            return
+        boxes.append(OCRBox(text=cleaned_text, confidence=confidence, bbox=flat_box))
 
     def _clean_text(self, text: str) -> Optional[str]:
         text = text.strip().upper()
@@ -137,9 +194,26 @@ class OCRService:
         return text if ALLOWED_CHAR_PATTERN.match(text) else None
 
     @staticmethod
-    def _to_bbox(points: List[List[float]]) -> List[float]:
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        x1, y1 = min(xs), min(ys)
-        x2, y2 = max(xs), max(ys)
-        return [float(x1), float(y1), float(x2), float(y2)]
+    def _to_bbox(points: object) -> List[float]:
+        if points is None:
+            return [0.0, 0.0, 0.0, 0.0]
+
+        if hasattr(points, "tolist"):
+            points = points.tolist()
+
+        if isinstance(points, dict):
+            points = points.get("points") or points.get("bbox") or points.get("box")
+
+        if isinstance(points, (list, tuple)):
+            if len(points) == 4 and all(isinstance(v, (int, float)) for v in points):
+                x1, y1, x2, y2 = points
+                return [float(x1), float(y1), float(x2), float(y2)]
+            if len(points) == 8 and all(isinstance(v, (int, float)) for v in points):
+                coords = list(zip(points[0::2], points[1::2]))
+                return OCRService._to_bbox(coords)
+            if points and all(isinstance(p, (list, tuple)) and len(p) >= 2 for p in points):
+                xs = [float(p[0]) for p in points]
+                ys = [float(p[1]) for p in points]
+                return [min(xs), min(ys), max(xs), max(ys)]
+
+        raise ValueError(f"Unsupported bbox format: {points}")
