@@ -122,6 +122,14 @@ class OCRService:
         result = ocr_callable(image_path, **extra_kwargs)
         boxes = self._parse_result(result)
         logger.info("PaddleOCR 返回 %s 个候选框", len(boxes))
+        for idx, box in enumerate(boxes, start=1):
+            logger.info(
+                "结果 #%d 文本=%s 置信度=%.3f 区域=%s",
+                idx,
+                box.text,
+                box.confidence,
+                box.bbox,
+            )
         return boxes
 
     def _parse_result(self, result: object) -> List[OCRBox]:
