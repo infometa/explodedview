@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-multipart
+paddleocr
+opencv-python
+numpy
+realesrgan
+basicsr

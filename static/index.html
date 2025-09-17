@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>爆炸图元件 OCR 管理台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-GtvZWS9Vyhi3F7S3w7Dnk3a1JpNggCBrum1+qsSVqS+8CA0nVddOZXS6URttu99o" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+    <style>
+      :root {
+        --brand-primary: #5b6eff;
+        --brand-accent: #13c2c2;
+      }
+
+      body {
+        background: #f3f5fb;
+        font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: #1f2330;
+      }
+
+      .navbar {
+        background: rgba(14, 20, 54, 0.85);
+        backdrop-filter: blur(12px);
+      }
+
+      .hero-section {
+        background: linear-gradient(120deg, rgba(91, 110, 255, 0.95), rgba(19, 194, 194, 0.9));
+        color: #fff;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-section::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.25), transparent 55%);
+        pointer-events: none;
+      }
+
+      .hero-kpi {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        padding: 18px 22px;
+      }
+
+      .glass-card {
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(209, 213, 233, 0.6);
+        border-radius: 20px;
+      }
+
+      .viewer-card {
+        border-radius: 24px;
+        border: none;
+      }
+
+      .viewer-toolbar .btn {
+        border-radius: 999px;
+        padding-inline: 18px;
+      }
+
+      .status-pill {
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+      }
+
+      .status-completed {
+        background: rgba(82, 196, 26, 0.15);
+        color: #389e0d;
+      }
+
+      .status-processing {
+        background: rgba(250, 173, 20, 0.18);
+        color: #d48806;
+      }
+
+      .status-failed {
+        background: rgba(255, 77, 79, 0.18);
+        color: #cf1322;
+      }
+
+      .status-pending,
+      .status-secondary {
+        background: rgba(140, 146, 172, 0.18);
+        color: #3f465c;
+      }
+
+      .file-list .file-item {
+        border: none;
+        border-bottom: 1px solid rgba(229, 232, 246, 0.8);
+        padding: 14px 20px;
+        transition: transform 130ms ease;
+        background: transparent;
+      }
+
+      .file-list .file-item:last-child {
+        border-bottom: none;
+      }
+
+      .file-list .file-item.active,
+      .file-list .file-item:hover {
+        background: rgba(91, 110, 255, 0.06);
+        transform: translateX(4px);
+      }
+
+      .file-meta-badges {
+        gap: 10px;
+      }
+
+      .canvas-wrapper {
+        border-radius: 20px;
+        border: 1px solid rgba(217, 220, 236, 0.9);
+        background: #fff;
+        padding: 16px;
+        position: relative;
+        min-height: 420px;
+      }
+
+      .canvas-wrapper.draw-mode {
+        box-shadow: inset 0 0 0 2px rgba(255, 193, 7, 0.4);
+      }
+
+      .canvas-container {
+        min-height: 380px;
+        width: 100%;
+        position: relative;
+        border-radius: 12px;
+        background: repeating-linear-gradient(
+          135deg,
+          rgba(244, 246, 255, 0.7),
+          rgba(244, 246, 255, 0.7) 14px,
+          rgba(237, 239, 250, 0.7) 14px,
+          rgba(237, 239, 250, 0.7) 28px
+        );
+        overflow: hidden;
+      }
+
+      .canvas-container.empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #6b7287;
+        font-size: 0.95rem;
+      }
+
+      .canvas-container:not(.empty) {
+        display: block;
+      }
+
+      .detection-list .detection-item {
+        border-radius: 14px;
+        border: 1px solid rgba(226, 229, 245, 0.9);
+        margin-bottom: 10px;
+        padding: 14px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(255, 255, 255, 0.92);
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+        cursor: pointer;
+      }
+
+      .detection-list .detection-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .detection-list .detection-item:hover,
+      .detection-list .detection-item.active {
+        border-color: rgba(91, 110, 255, 0.4);
+        box-shadow: 0 8px 20px rgba(40, 60, 120, 0.08);
+      }
+
+      .confidence-pill {
+        min-width: 58px;
+        text-align: center;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 0.82rem;
+        padding: 6px 12px;
+      }
+
+      .confidence-strong {
+        background: rgba(82, 196, 26, 0.18);
+        color: #237804;
+      }
+
+      .confidence-medium {
+        background: rgba(250, 173, 20, 0.18);
+        color: #ad6800;
+      }
+
+      .confidence-weak {
+        background: rgba(255, 77, 79, 0.18);
+        color: #a8071a;
+      }
+
+      .empty-state {
+        background: rgba(244, 247, 255, 0.6);
+        border-radius: 16px;
+      }
+
+      @media (max-width: 991.98px) {
+        .hero-section {
+          text-align: center;
+        }
+        .hero-section .d-flex {
+          justify-content: center;
+        }
+        .canvas-wrapper {
+          min-height: 320px;
+        }
+        .canvas-container {
+          min-height: 280px;
+        }
+      }
+
+      @media (max-width: 575.98px) {
+        .viewer-toolbar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .viewer-toolbar .btn-group {
+          width: 100%;
+        }
+        .viewer-toolbar .btn-group .btn {
+          flex: 1;
+        }
+        .viewer-toolbar #addBBoxBtn {
+          width: 100%;
+        }
+        .file-list .file-item {
+          padding: 14px 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar navbar-dark py-3">
+      <div class="container-xxl d-flex justify-content-between align-items-center">
+        <span class="navbar-brand fw-semibold">Exploded View OCR Console</span>
+        <span class="text-white-50 small">高精度 | 快速标注 | 数据闭环</span>
+      </div>
+    </nav>
+
+    <header class="hero-section py-5">
+      <div class="container-xxl position-relative">
+        <div class="row align-items-center g-4">
+          <div class="col-lg-8">
+            <h1 class="display-5 fw-semibold mb-3">面向爆炸图的元件编号识别工作台</h1>
+            <p class="lead text-white-75 mb-4">自动调用 PaddleOCR + 自研清晰度分析，支持高清放大、逐框校正与训练数据导出，让工程标注更高效、可信。</p>
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-light btn-sm px-3" id="exportAllBtn"><i class="bi bi-arrow-down-circle me-1"></i>导出全部训练数据</button>
+              <button class="btn btn-outline-light btn-sm px-3" id="exportManualBtn"><i class="bi bi-pen me-1"></i>仅导出人工确认</button>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="hero-kpi text-white shadow-lg">
+              <div class="d-flex align-items-center mb-2">
+                <div class="rounded-circle bg-white bg-opacity-25 p-2 me-3">
+                  <i class="bi bi-cpu fs-4"></i>
+                </div>
+                <div>
+                  <div class="small text-white-50">引擎</div>
+                  <div class="fw-semibold">PaddleOCR + Real-ESRGAN</div>
+                </div>
+              </div>
+              <div class="d-flex align-items-center">
+                <div class="rounded-circle bg-white bg-opacity-25 p-2 me-3">
+                  <i class="bi bi-hdd-network fs-4"></i>
+                </div>
+                <div>
+                  <div class="small text-white-50">数据闭环</div>
+                  <div class="fw-semibold">SQLite 持久化 · 一键导出训练集</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="container-xxl py-5">
+      <div class="row g-4">
+        <div class="col-12 col-xl-4 order-2 order-xl-1">
+          <div class="sticky-xl-top" style="top: 24px;">
+            <div class="card glass-card shadow-sm mb-4">
+              <div class="card-body p-4">
+                <h5 class="fw-semibold mb-2">上传爆炸图</h5>
+                <p class="text-muted small mb-4">支持一次批量上传多张图片，后台自动排队处理。</p>
+                <form id="uploadForm" class="d-grid gap-3">
+                  <div>
+                    <label for="fileInput" class="form-label small text-muted">选择图片（支持 .png / .jpg 格式）</label>
+                    <input class="form-control" type="file" id="fileInput" name="files" accept="image/*" multiple required>
+                  </div>
+                  <button class="btn btn-primary" type="submit"><i class="bi bi-cloud-upload me-1"></i>上传并开始识别</button>
+                </form>
+                <div id="uploadFeedback" class="small mt-3"></div>
+              </div>
+            </div>
+
+            <div class="card glass-card shadow-sm">
+              <div class="card-header d-flex justify-content-between align-items-start bg-transparent border-0 pb-0 px-4 pt-4">
+                <div>
+                  <h6 class="fw-semibold mb-1">文件列表</h6>
+                  <div class="text-muted small">最新任务会自动置顶</div>
+                </div>
+                <button class="btn btn-light btn-sm" id="refreshListBtn" title="刷新列表"><i class="bi bi-arrow-clockwise"></i></button>
+              </div>
+              <div class="card-body p-0 mt-3">
+                <div id="fileList" class="list-group list-group-flush file-list"></div>
+                <div id="fileListEmpty" class="empty-state text-center text-muted py-4" style="display: none;">
+                  <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                  暂无上传记录，先上传一张爆炸图吧
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-8 order-1 order-xl-2">
+          <div class="card viewer-card shadow-sm">
+            <div class="card-body p-4 p-lg-5">
+              <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-4">
+                <div>
+                  <h3 class="fw-semibold mb-2" id="viewerTitle">尚未选择文件</h3>
+                  <div class="d-flex flex-wrap align-items-center gap-2 small text-muted" id="viewerMeta">
+                    请从左侧列表中选择图片以查看识别结果
+                  </div>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <span class="status-pill status-secondary" id="viewerStatusPill">未选择</span>
+                  <div id="qualityBadges" class="d-flex flex-wrap gap-2"></div>
+                </div>
+              </div>
+
+              <div class="viewer-toolbar d-flex align-items-center justify-content-between gap-3 mb-4">
+                <div class="btn-group" role="group" aria-label="图像切换">
+                  <button type="button" class="btn btn-outline-primary btn-sm" id="toggleProcessedBtn" disabled><i class="bi bi-stars me-1"></i>处理图</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="toggleOriginalBtn" disabled><i class="bi bi-image me-1"></i>原图</button>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" id="addBBoxBtn" disabled><i class="bi bi-bounding-box-circles me-1"></i>添加标注</button>
+              </div>
+
+              <div id="canvasWrapper" class="canvas-wrapper mb-4">
+                <div id="canvasContainer" class="canvas-container empty">
+                  请选择左侧的图片以查看识别结果
+                </div>
+              </div>
+
+              <div class="d-flex align-items-center justify-content-between mb-3">
+                <h5 class="mb-0">识别结果</h5>
+                <span class="badge text-bg-light" id="detectionSummary">0 项</span>
+              </div>
+              <div class="detection-list" id="detectionList">
+                <div class="empty-state text-muted text-center py-4">
+                  暂无识别结果
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const state = {
+        files: [],
+        selectedFile: null,
+        stage: null,
+        imageLayer: null,
+        boxLayer: null,
+        drawMode: false,
+        newRect: null,
+        drawStart: null,
+        showProcessed: true,
+      };
+
+      document.getElementById('uploadForm').addEventListener('submit', handleUpload);
+      document.getElementById('refreshListBtn').addEventListener('click', loadFiles);
+      document.getElementById('addBBoxBtn').addEventListener('click', () => toggleDrawMode());
+      document.getElementById('toggleProcessedBtn').addEventListener('click', () => switchImage(true));
+      document.getElementById('toggleOriginalBtn').addEventListener('click', () => switchImage(false));
+      document.getElementById('exportAllBtn').addEventListener('click', () => exportData(false));
+      document.getElementById('exportManualBtn').addEventListener('click', () => exportData(true));
+
+      loadFiles();
+      setupWebSocket();
+
+      async function handleUpload(event) {
+        event.preventDefault();
+        const input = document.getElementById('fileInput');
+        const feedback = document.getElementById('uploadFeedback');
+        feedback.textContent = '';
+        feedback.className = 'small mt-3';
+        if (!input.files.length) {
+          feedback.textContent = '请选择要上传的图片文件。';
+          feedback.classList.add('text-danger');
+          return;
+        }
+
+        const formData = new FormData();
+        Array.from(input.files).forEach(file => formData.append('files', file));
+
+        try {
+          const response = await fetch('/api/files/upload', { method: 'POST', body: formData });
+          if (!response.ok) {
+            const error = await response.json();
+            feedback.textContent = error.detail || '上传失败，请稍后再试。';
+            feedback.classList.add('text-danger');
+          } else {
+            feedback.textContent = '上传成功，正在后台处理，请稍候…';
+            feedback.classList.add('text-success');
+            input.value = '';
+            await loadFiles();
+          }
+        } catch (error) {
+          feedback.textContent = '上传过程中出现网络错误，请重试。';
+          feedback.classList.add('text-danger');
+        }
+      }
+
+      async function loadFiles() {
+        const response = await fetch('/api/files/');
+        if (!response.ok) {
+          return;
+        }
+        const files = await response.json();
+        state.files = files;
+        renderFileList();
+        if (state.selectedFile) {
+          const match = files.find(f => f.id === state.selectedFile.id);
+          if (match) {
+            state.selectedFile.status = match.status;
+            state.selectedFile.need_upscale = match.need_upscale;
+            state.selectedFile.used_upscale = match.used_upscale;
+            updateStatusPill(match.status);
+          }
+        }
+      }
+
+      function renderFileList() {
+        const listContainer = document.getElementById('fileList');
+        const emptyState = document.getElementById('fileListEmpty');
+        listContainer.innerHTML = '';
+
+        if (!state.files.length) {
+          emptyState.style.display = 'block';
+          return;
+        }
+        emptyState.style.display = 'none';
+
+        state.files.forEach(file => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'list-group-item list-group-item-action file-item text-start';
+          if (state.selectedFile && state.selectedFile.id === file.id) {
+            item.classList.add('active');
+          }
+          item.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center gap-3">
+              <div class="fw-semibold text-truncate">${file.original_filename}</div>
+              <span class="status-pill ${statusClass(file.status)}">${statusLabel(file.status)}</span>
+            </div>
+            <div class="d-flex flex-wrap align-items-center text-muted small mt-2 file-meta-badges">
+              <span class="d-flex align-items-center gap-1"><i class="bi bi-clock-history"></i>${formatTimestamp(file.created_at)}</span>
+              <span class="d-flex align-items-center gap-1"><i class="bi bi-geo"></i>${file.detections ? file.detections.length : 0} 条标注</span>
+              ${file.need_upscale ? '<span class="badge text-bg-warning-subtle text-warning-emphasis">建议放大</span>' : ''}
+              ${file.used_upscale ? '<span class="badge text-bg-primary-subtle text-primary-emphasis">已放大</span>' : ''}
+            </div>
+          `;
+          item.addEventListener('click', () => selectFile(file.id));
+          listContainer.appendChild(item);
+        });
+      }
+
+      function statusLabel(status) {
+        switch (status) {
+          case 'completed':
+            return '已完成';
+          case 'processing':
+            return '处理中';
+          case 'failed':
+            return '失败';
+          case 'pending':
+            return '排队中';
+          default:
+            return status || '未知';
+        }
+      }
+
+      function statusClass(status) {
+        switch (status) {
+          case 'completed':
+            return 'status-completed';
+          case 'processing':
+            return 'status-processing';
+          case 'failed':
+            return 'status-failed';
+          case 'pending':
+            return 'status-pending';
+          default:
+            return 'status-secondary';
+        }
+      }
+
+      async function selectFile(fileId) {
+        const response = await fetch(`/api/files/${fileId}`);
+        if (!response.ok) {
+          return;
+        }
+        const detail = await response.json();
+        state.selectedFile = detail;
+        state.showProcessed = Boolean(detail.processed_path);
+        renderViewer(detail);
+        renderFileList();
+      }
+
+      function renderViewer(file) {
+        document.getElementById('viewerTitle').textContent = file.original_filename;
+        updateStatusPill(file.status);
+
+        const metaItems = [];
+        metaItems.push(`<span class="d-flex align-items-center gap-1"><i class="bi bi-clock-history"></i>${formatTimestamp(file.created_at)}</span>`);
+        metaItems.push(`<span class="text-secondary">•</span>`);
+        metaItems.push(`<span class="d-flex align-items-center gap-1"><i class="bi bi-arrow-repeat"></i>${formatTimestamp(file.updated_at)}</span>`);
+        metaItems.push(`<span class="text-secondary">•</span>`);
+        metaItems.push(`<span class="d-flex align-items-center gap-1"><i class="bi bi-collection"></i>${file.detections.length} 条识别</span>`);
+        if (file.need_upscale) {
+          metaItems.push(`<span class="text-secondary">•</span>`);
+          metaItems.push(`<span class="d-flex align-items-center gap-1 text-warning"><i class="bi bi-stars"></i>建议放大</span>`);
+        }
+        document.getElementById('viewerMeta').innerHTML = metaItems.join(' ');
+
+        const qualityBadges = [];
+        if (file.blur_score !== null && file.blur_score !== undefined) {
+          qualityBadges.push(`<span class="badge text-bg-light text-secondary">Blur ${formatNumber(file.blur_score)}</span>`);
+        }
+        if (file.contrast_score !== null && file.contrast_score !== undefined) {
+          qualityBadges.push(`<span class="badge text-bg-light text-secondary">Contrast ${formatNumber(file.contrast_score)}</span>`);
+        }
+        if (file.used_upscale) {
+          qualityBadges.push('<span class="badge text-bg-primary-subtle text-primary-emphasis">已放大</span>');
+        }
+        document.getElementById('qualityBadges').innerHTML = qualityBadges.join('');
+
+        const processedBtn = document.getElementById('toggleProcessedBtn');
+        const originalBtn = document.getElementById('toggleOriginalBtn');
+        processedBtn.disabled = !file.processed_path;
+        setToggleButton(processedBtn, state.showProcessed && Boolean(file.processed_path), 'primary');
+        setToggleButton(originalBtn, !state.showProcessed || !file.processed_path, 'secondary');
+        document.getElementById('addBBoxBtn').disabled = false;
+
+        loadImageLayer(file);
+        renderDetectionList(file.detections);
+      }
+
+      function updateStatusPill(status) {
+        const pill = document.getElementById('viewerStatusPill');
+        pill.textContent = statusLabel(status);
+        pill.className = `status-pill ${statusClass(status)}`;
+      }
+
+      function formatNumber(value) {
+        if (value === null || value === undefined || Number.isNaN(value)) {
+          return 'N/A';
+        }
+        return Number(value).toFixed(1);
+      }
+
+      function formatTimestamp(timestamp) {
+        if (!timestamp) return 'N/A';
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return 'N/A';
+        return date.toLocaleString();
+      }
+
+      function loadImageLayer(file) {
+        const container = document.getElementById('canvasContainer');
+        const wrapper = document.getElementById('canvasWrapper');
+        if (state.stage) {
+          state.stage.destroy();
+          state.stage = null;
+          state.imageLayer = null;
+          state.boxLayer = null;
+        }
+        container.innerHTML = '';
+        container.classList.add('empty');
+        container.textContent = '图像加载中…';
+
+        const imageUrl = state.showProcessed && file.processed_path ? `/api/files/${file.id}/image?processed=1` : `/api/files/${file.id}/image`;
+        const img = new Image();
+        img.onload = () => {
+          container.classList.remove('empty');
+          container.innerHTML = '';
+          const rect = container.getBoundingClientRect();
+          const width = img.width;
+          const height = img.height;
+          const scale = Math.min(rect.width / width || 1, rect.height / height || 1, 1);
+
+          state.stage = new Konva.Stage({
+            container: 'canvasContainer',
+            width: width * scale,
+            height: height * scale,
+          });
+
+          state.imageLayer = new Konva.Layer();
+          const konvaImage = new Konva.Image({
+            image: img,
+            x: 0,
+            y: 0,
+            width: width * scale,
+            height: height * scale,
+          });
+          state.imageLayer.add(konvaImage);
+          state.stage.add(state.imageLayer);
+
+          state.boxLayer = new Konva.Layer();
+          state.stage.add(state.boxLayer);
+
+          toggleDrawMode(false);
+
+          drawDetections(state.selectedFile.detections, scale);
+          prepareDrawMode(scale);
+        };
+        img.onerror = () => {
+          container.classList.add('empty');
+          container.textContent = '图像加载失败，请稍后重试。';
+        };
+        img.src = imageUrl;
+      }
+
+      function drawDetections(detections, scale) {
+        if (!state.boxLayer) return;
+        state.boxLayer.destroyChildren();
+        detections.forEach(det => {
+          const rect = new Konva.Rect({
+            x: det.bbox_x1 * scale,
+            y: det.bbox_y1 * scale,
+            width: (det.bbox_x2 - det.bbox_x1) * scale,
+            height: (det.bbox_y2 - det.bbox_y1) * scale,
+            stroke: det.source === 'manual' ? '#0d6efd' : '#28a745',
+            strokeWidth: 2,
+            id: `det-${det.id}`,
+          });
+          rect.on('click', () => highlightDetection(det.id));
+          state.boxLayer.add(rect);
+        });
+        state.boxLayer.draw();
+      }
+
+      function renderDetectionList(detections) {
+        const list = document.getElementById('detectionList');
+        list.innerHTML = '';
+        const summary = document.getElementById('detectionSummary');
+        summary.textContent = `${detections.length} 项`;
+
+        if (!detections.length) {
+          list.innerHTML = '<div class="empty-state text-muted text-center py-4">暂无识别结果</div>';
+          return;
+        }
+
+        detections.forEach(det => {
+          const item = document.createElement('div');
+          item.className = 'detection-item w-100';
+          item.dataset.detectionId = det.id;
+          const confidence = det.confidence !== null && det.confidence !== undefined ? `${Math.round(det.confidence * 100)}%` : 'N/A';
+          item.innerHTML = `
+            <div>
+              <div class="fw-semibold fs-6 text-dark">${det.text}</div>
+              <div class="small text-muted">${det.source === 'manual' ? '人工校正' : '自动识别'}</div>
+            </div>
+            <div class="confidence-pill ${confidenceClass(det.confidence)}">${confidence}</div>
+          `;
+          item.addEventListener('click', () => highlightDetection(det.id));
+          list.appendChild(item);
+        });
+      }
+
+      function confidenceClass(confidence) {
+        if (confidence === null || confidence === undefined) return 'confidence-medium';
+        if (confidence > 0.85) return 'confidence-strong';
+        if (confidence > 0.6) return 'confidence-medium';
+        return 'confidence-weak';
+      }
+
+      function highlightDetection(detectionId) {
+        if (!state.selectedFile) return;
+        const detection = state.selectedFile.detections.find(det => det.id === detectionId);
+        if (!detection) return;
+
+        document.querySelectorAll('#detectionList .detection-item').forEach(node => {
+          node.classList.toggle('active', Number(node.dataset.detectionId) === detectionId);
+        });
+
+        if (state.boxLayer) {
+          const colorMap = new Map();
+          state.selectedFile.detections.forEach(det => {
+            colorMap.set(`det-${det.id}`, det.source === 'manual' ? '#0d6efd' : '#28a745');
+          });
+          state.boxLayer.getChildren().forEach(node => {
+            const defaultColor = colorMap.get(node.id()) || '#28a745';
+            node.stroke(node.id() === `det-${detectionId}` ? '#ff5722' : defaultColor);
+          });
+          state.boxLayer.draw();
+        }
+
+        const input = prompt(`编号：${detection.text}\n置信度：${formatNumber(detection.confidence)}\n\n输入新的编号以保存，输入 DELETE 删除该标注。`, detection.text);
+        if (input === null) {
+          return;
+        }
+        const trimmed = input.trim();
+        if (!trimmed) {
+          return;
+        }
+        if (trimmed.toUpperCase() === 'DELETE') {
+          deleteDetection(detectionId);
+          return;
+        }
+        editDetection(detectionId, trimmed);
+      }
+
+      async function editDetection(detectionId, value) {
+        const payload = { text: value, source: 'manual' };
+        const response = await fetch(`/api/detections/${detectionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (response.ok) {
+          await selectFile(state.selectedFile.id);
+        } else {
+          alert('更新失败');
+        }
+      }
+
+      async function deleteDetection(detectionId) {
+        if (!state.selectedFile) return;
+        const response = await fetch(`/api/detections/${detectionId}`, { method: 'DELETE' });
+        if (response.ok) {
+          await selectFile(state.selectedFile.id);
+        } else {
+          alert('删除失败');
+        }
+      }
+
+      function prepareDrawMode(scale) {
+        if (!state.stage) return;
+        state.stage.off('mousedown mousemove mouseup');
+        state.stage.on('mousedown', () => {
+          if (!state.drawMode) return;
+          state.drawStart = state.stage.getPointerPosition();
+          if (!state.drawStart) return;
+          const { x, y } = state.drawStart;
+          state.newRect = new Konva.Rect({
+            x,
+            y,
+            width: 0,
+            height: 0,
+            stroke: '#ff9800',
+            strokeWidth: 2,
+            dash: [4, 4],
+          });
+          state.boxLayer.add(state.newRect);
+        });
+        state.stage.on('mousemove', () => {
+          if (!state.drawMode || !state.newRect || !state.drawStart) return;
+          const pos = state.stage.getPointerPosition();
+          if (!pos) return;
+          const width = pos.x - state.drawStart.x;
+          const height = pos.y - state.drawStart.y;
+          state.newRect.x(width < 0 ? pos.x : state.drawStart.x);
+          state.newRect.y(height < 0 ? pos.y : state.drawStart.y);
+          state.newRect.width(Math.abs(width));
+          state.newRect.height(Math.abs(height));
+          state.boxLayer.batchDraw();
+        });
+        state.stage.on('mouseup', async () => {
+          if (!state.drawMode || !state.newRect || !state.drawStart) return;
+          const rect = state.newRect;
+          state.newRect = null;
+          state.drawStart = null;
+          toggleDrawMode(false);
+          const text = prompt('请输入标注编号');
+          if (!text) {
+            rect.destroy();
+            state.boxLayer.draw();
+            return;
+          }
+          const scaleFactor = scale;
+          const x1 = rect.x() / scaleFactor;
+          const y1 = rect.y() / scaleFactor;
+          const x2 = (rect.x() + rect.width()) / scaleFactor;
+          const y2 = (rect.y() + rect.height()) / scaleFactor;
+          rect.destroy();
+          state.boxLayer.draw();
+          await createDetection({
+            text,
+            bbox_x1: x1,
+            bbox_y1: y1,
+            bbox_x2: x2,
+            bbox_y2: y2,
+          });
+        });
+      }
+
+      async function createDetection(data) {
+        if (!state.selectedFile) return;
+        const payload = {
+          ...data,
+          file_id: state.selectedFile.id,
+          source: 'manual',
+        };
+        const response = await fetch('/api/detections/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (response.ok) {
+          await selectFile(state.selectedFile.id);
+        } else {
+          alert('添加标注失败');
+        }
+      }
+
+      function toggleDrawMode(forceState = null) {
+        if (!state.selectedFile) return;
+        if (forceState === true) {
+          state.drawMode = true;
+        } else if (forceState === false) {
+          state.drawMode = false;
+        } else {
+          state.drawMode = !state.drawMode;
+        }
+        const btn = document.getElementById('addBBoxBtn');
+        const wrapper = document.getElementById('canvasWrapper');
+        if (state.drawMode) {
+          btn.classList.remove('btn-primary');
+          btn.classList.add('btn-warning', 'text-white');
+          btn.innerHTML = '<i class="bi bi-pencil-square me-1"></i>标注模式中';
+          wrapper.classList.add('draw-mode');
+        } else {
+          btn.classList.remove('btn-warning', 'text-white');
+          btn.classList.add('btn-primary');
+          btn.innerHTML = '<i class="bi bi-bounding-box-circles me-1"></i>添加标注';
+          wrapper.classList.remove('draw-mode');
+        }
+      }
+
+      function switchImage(processed) {
+        if (!state.selectedFile) return;
+        if (processed && !state.selectedFile.processed_path) return;
+        state.showProcessed = processed;
+        const processedBtn = document.getElementById('toggleProcessedBtn');
+        const originalBtn = document.getElementById('toggleOriginalBtn');
+        setToggleButton(processedBtn, processed && Boolean(state.selectedFile.processed_path), 'primary');
+        setToggleButton(originalBtn, !processed || !state.selectedFile.processed_path, 'secondary');
+        loadImageLayer(state.selectedFile);
+      }
+
+      function setToggleButton(button, active, color) {
+        const outlineClass = `btn-outline-${color}`;
+        const solidClass = `btn-${color}`;
+        button.classList.remove(outlineClass, solidClass);
+        button.classList.add(active ? solidClass : outlineClass);
+      }
+
+      function setupWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${protocol}://${window.location.host}/ws/updates`);
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (['file_processed', 'file_failed'].includes(data.event)) {
+              loadFiles();
+              if (state.selectedFile && state.selectedFile.id === data.file_id) {
+                selectFile(data.file_id);
+              }
+            }
+            if (['detection_created', 'detection_updated', 'detection_deleted'].includes(data.event)) {
+              if (state.selectedFile && state.selectedFile.id === data.file_id) {
+                selectFile(data.file_id);
+              }
+            }
+          } catch (error) {
+            console.error('WS message error', error);
+          }
+        };
+      }
+
+      async function exportData(manualOnly) {
+        const body = { include_manual_only: manualOnly };
+        if (state.selectedFile) {
+          body.file_ids = [state.selectedFile.id];
+        }
+        const response = await fetch('/api/export/paddleocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+          try {
+            const error = await response.json();
+            alert(error.detail || '导出失败');
+          } catch (error) {
+            alert('导出失败');
+          }
+          return;
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const suffix = manualOnly ? 'manual' : 'all';
+        link.download = `paddleocr_export_${suffix}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-mQ93S6kF2KeSBxUqFVLtZL1NVr7Di5urN6byN1NsZM3Rp3bIan+FJxuxTDPZWSJY" crossorigin="anonymous"></script>
+  </body>
+</html>
