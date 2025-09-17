@@ -16,7 +16,14 @@ from .websocket_manager import WebSocketManager
 Base.metadata.create_all(bind=engine)
 
 
-logger = logging.getLogger("uvicorn.access")
+request_logger = logging.getLogger("app.request")
+request_logger.setLevel(logging.INFO)
+if not request_logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("[%(asctime)s] %(levelname)s %(message)s")
+    handler.setFormatter(formatter)
+    request_logger.addHandler(handler)
+    request_logger.propagate = False
 
 
 def create_app() -> FastAPI:
@@ -49,9 +56,9 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         client_host = request.client.host if request.client else "unknown"
-        logger.info("Incoming %s %s from %s", request.method, request.url.path, client_host)
+        request_logger.info("Incoming %s %s from %s", request.method, request.url.path, client_host)
         response = await call_next(request)
-        logger.info(
+        request_logger.info(
             "Completed %s %s with status %s", request.method, request.url.path, response.status_code
         )
         return response
