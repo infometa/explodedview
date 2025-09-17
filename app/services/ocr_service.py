@@ -120,7 +120,9 @@ class OCRService:
             extra_kwargs["cls"] = True
 
         result = ocr_callable(image_path, **extra_kwargs)
-        return self._parse_result(result)
+        boxes = self._parse_result(result)
+        logger.info("PaddleOCR 返回 %s 个候选框", len(boxes))
+        return boxes
 
     def _parse_result(self, result: object) -> List[OCRBox]:
         boxes: List[OCRBox] = []
@@ -216,8 +218,13 @@ class OCRService:
     def _clean_text(self, text: str) -> Optional[str]:
         text = text.strip().upper()
         text = text.replace(" ", "")
-        text = text.replace("O", "0") if text.isalpha() and "O" in text else text
-        return text if ALLOWED_CHAR_PATTERN.match(text) else None
+        if text.isalpha() and "O" in text:
+            text = text.replace("O", "0")
+        if not text:
+            return None
+        if not ALLOWED_CHAR_PATTERN.match(text):
+            logger.debug("识别结果包含非受限字符: %s", text)
+        return text
 
     @staticmethod
     def _to_bbox(points: object) -> List[float]:
