@@ -150,26 +150,52 @@ class OCRService:
 
         if isinstance(result, list):
             for line in result:
-                if isinstance(line, dict):
-                    bbox = line.get("bbox") or line.get("box") or line.get("points") or line.get("dt_box")
-                    text = line.get("text") or line.get("transcription") or line.get("rec_text")
-                    score = line.get("confidence") or line.get("score") or line.get("rec_score")
-                    if bbox is None or text is None:
-                        continue
-                    self._append_box(boxes, bbox, text, score if score is not None else 1.0)
-                    continue
-                if isinstance(line, (list, tuple)):
-                    for entry in line if isinstance(line[0], (list, tuple)) else [line]:
-                        if isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                            bbox, rec = entry[0], entry[1]
-                            if isinstance(rec, (list, tuple)) and len(rec) >= 2:
-                                text, score = rec[0], rec[1]
-                            else:
-                                text, score = rec, 1.0
-                            self._append_box(boxes, bbox, text, score)
+                self._parse_line_entry(line, boxes)
             return boxes
 
         return boxes
+
+    def _parse_line_entry(self, entry: object, boxes: List[OCRBox]) -> None:
+        if isinstance(entry, dict):
+            bbox = entry.get("bbox") or entry.get("box") or entry.get("points") or entry.get("dt_box")
+            text = entry.get("text") or entry.get("transcription") or entry.get("rec_text")
+            score = entry.get("confidence") or entry.get("score") or entry.get("rec_score")
+            if bbox is None or text is None:
+                return
+            self._append_box(boxes, bbox, text, score if score is not None else 1.0)
+            return
+
+        if isinstance(entry, (list, tuple)):
+            if len(entry) >= 2 and self._looks_like_bbox(entry[0]):
+                bbox_candidate = entry[0]
+                rec = entry[1]
+                if isinstance(rec, (list, tuple)) and len(rec) >= 2:
+                    text, score = rec[0], rec[1]
+                else:
+                    text, score = rec, 1.0
+                self._append_box(boxes, bbox_candidate, text, score)
+                return
+
+            if all(isinstance(item, (list, tuple, dict)) for item in entry):
+                for item in entry:
+                    self._parse_line_entry(item, boxes)
+                return
+
+        # For any other type we ignore silently.
+
+    def _looks_like_bbox(self, value: object) -> bool:
+        if value is None:
+            return False
+        if hasattr(value, "tolist"):
+            value = value.tolist()
+        if isinstance(value, dict):
+            return any(key in value for key in ("points", "bbox", "box", "dt_box"))
+        if isinstance(value, (list, tuple)):
+            if len(value) == 4 and all(isinstance(v, (int, float)) for v in value):
+                return True
+            if value and all(isinstance(p, (list, tuple)) and len(p) >= 2 for p in value):
+                return True
+        return False
 
     def _append_box(self, boxes: List[OCRBox], bbox: object, text: object, score: object) -> None:
         cleaned_text = self._clean_text(str(text)) if text is not None else None
