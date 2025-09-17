@@ -257,14 +257,21 @@ class OCRService:
         doc_res = entry.get("doc_preprocessor_res") or {}
         if isinstance(doc_res, dict):
             angle = doc_res.get("angle")
-            img_ref = doc_res.get("input_img") or doc_res.get("output_img")
+            img_ref = doc_res.get("input_img")
+            if img_ref is None:
+                img_ref = doc_res.get("output_img")
             if isinstance(img_ref, np.ndarray):
                 image_height, image_width = img_ref.shape[:2]
 
         for idx, poly in enumerate(polys):
             text = texts[idx] if idx < len(texts) else ""
             score = scores[idx] if idx < len(scores) else 1.0
-            if angle and image_width and image_height:
+            if (
+                angle is not None
+                and image_width is not None
+                and image_height is not None
+                and angle % 360 != 0
+            ):
                 poly = self._reverse_orientation(poly, angle, image_width, image_height)
             self._append_box(boxes, poly, text, score)
 
